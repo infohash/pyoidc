@@ -461,9 +461,18 @@ class Consumer(Client):
             self.verify_id_token(idt, self.authz_req.get(_state or atr["state"]))
         return aresp, atr, idt
 
-    def complete(self, state):
+    def complete(
+        self,
+        state,
+        authn_method: str = "client_secret_basic",
+        session_state: Optional[str] = None,
+    ):
         """
         Do the access token request, the last step in a code flow.
+
+        'session_state' is an optional parameter that can be provided if the Authorization Server support OIDC Session
+        Management.
+        If provided, it is used as the key in the session database to store the consumer data.
 
         If Implicit flow was used then this method is never used.
         """
@@ -485,7 +494,10 @@ class Consumer(Client):
             raise PyoidcError("Nothing to authenticate with")
 
         resp = self.do_access_token_request(
-            state=state, request_args=args, http_args=http_args
+            state=state,
+            request_args=args,
+            http_args=http_args,
+            authn_method=authn_method,
         )
 
         logger.info("Access Token Response: %s" % sanitize(resp))
@@ -493,7 +505,12 @@ class Consumer(Client):
         if resp.type() == "ErrorResponse":
             raise TokenError(resp.error, resp)
 
-        self._backup(state)
+        if session_state is not None:
+            # Use session_state from Authorization server, as per §2
+            # from https://openid.net/specs/openid-connect-session-1_0.html
+            self._backup(session_state)
+        else:
+            self._backup(state)
 
         return resp
 
